@@ -1,0 +1,780 @@
+<?php
+function silicagel_collection_menu(){
+    
+    $items['silicagel/datalookup'] = array(
+        'page callback' => 'silicagel_collection_datalookup_autocomplete',
+        'access callback' => true,
+        'file' =>'includes/datalookup_autocomplete.inc',
+        'type' => MENU_CALLBACK
+      );
+    
+
+    $items['admin/config/silicagel'] = array(
+        'title' => 'Silica Gel Collection Configuration',
+        'description' => 'Configuration parameters for Silica Gel Collection Module',
+        'position' => 'right',
+        'weight' => -5,
+        'page callback' => 'system_admin_menu_block_page',
+        'access arguments' => array('administer site configuration'),
+        'file' => 'system.admin.inc',
+        'file path' => drupal_get_path('module', 'system'),
+    );
+    
+    
+    $items['admin/config/silicagel/printer'] = array(
+        'title' => 'Silica Gel Barcode Printer',
+        'description' => 'Configure the Zebra barcode printer',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('silicagel_printer_form'),
+        'access arguments' => array('administer site configuration'),
+        'file' => 'includes/silicagel.admin.inc',
+        'type' => MENU_NORMAL_ITEM
+    );
+    
+    $items['silicagel/print/%'] = array(
+        'title' => 'Silica Gel Print Label',
+        'description' => 'Print a label for a packet',
+        'access callback' => true,
+        'page callback' => 'silicagel_print_label',
+        'page arguments' => array(1),
+        'file' => 'includes/print_label.inc',
+        'type' => MENU_CALLBACK
+    );
+    
+    return $items;
+    
+}
+
+
+/*
+    Alter the node form before it is displayed
+*/
+function silicagel_collection_form_node_form_alter(&$form, $form_state){
+    
+    //print_r($form_state); exit;
+    
+    error_log("build form called");
+    
+    // if you are targeting a specific content type then 
+      // you can access the type:
+      $type = $form['#node']->type;
+      // Then
+      if ($type != 'silica_gel_packet') return;
+
+      // hide the title field - we will populate it automatically
+      $form['title']['#access'] = FALSE;
+
+      //  Put packet fields in a section of their own
+       $form['fieldset_packet'] = array(
+        '#type' => 'fieldset', 
+        '#title' => t('Required Packet Information'), 
+        '#weight' => 40, 
+        '#collapsible' => false, 
+        '#collapsed' => false,
+       );
+              
+       setup_lookup_field($form, $form_state, 'field_barcode', 'fieldset_packet', true); // barcode is read only.
+       setup_lookup_field($form, $form_state, 'field_data_lookup_key', 'fieldset_packet', false);
+       setup_lookup_field($form, $form_state, 'field_storage_location', 'fieldset_packet', false);
+       setup_lookup_field($form, $form_state, 'field_amount_of_material', 'fieldset_packet', false);
+       setup_lookup_field($form, $form_state, 'field_kind_of_source_material', 'fieldset_packet', false);
+       
+       // we put some javascript in to prevent form submission if they change the lookup key but don't lookup the associated data
+       $form['fieldset_packet']['field_data_lookup_key']['#attributes'] = array('onchange' => "jQuery('input:#edit-submit').attr('disabled', true); console.log(jQuery('input:#edit-submit').val('Please update associated data before saving'))");
+       
+       // add and ajax auto suggest to the lookup box
+       $form['fieldset_packet']['field_data_lookup_key']['und'][0]['value']['#autocomplete_path'] = 'silicagel/datalookup';
+       
+       // Create a button to trigger a lookup of the other fields
+       $form['fieldset_packet']['lookup'] = array(
+           '#type' => 'submit',
+           '#weight' => 10,
+           '#submit' => array('silicagel_collection_form_lookup_values'),
+           '#validate' => array('silicagel_collection_form_lookup_values_validate'),
+           '#value' => t('Lookup Associated Data')
+       );
+      
+       // get them all in the right order
+       $form['fieldset_packet']['field_barcode']['#weight'] = 10;
+       $form['fieldset_packet']['field_kind_of_source_material']['#weight'] = 15;
+       $form['fieldset_packet']['field_storage_location']['#weight'] = 20;
+       $form['fieldset_packet']['field_amount_of_material']['#weight'] = 30;
+       $form['fieldset_packet']['field_data_lookup_key']['#weight'] = 40;
+       $form['fieldset_packet']['lookup']['#weight'] = 50;
+       
+       // if this is a create form barcode has a dummy value       
+       if( !$form['fieldset_packet']['field_barcode']['und']['0']['value']['#default_value'] ){
+           $form['fieldset_packet']['field_barcode']['und']['0']['value']['#default_value'] = 'ESILICA--------';
+       }
+      
+      //  Herbarium fields section
+       $form['fieldset_herbarium'] = array(
+        '#type' => 'fieldset', 
+        '#title' => t('Associated Herbarium Data'), 
+        '#weight' => 50, 
+        '#collapsible' => TRUE, 
+       );
+
+       // move a field into the fieldset
+       setup_lookup_field($form, $form_state, 'field_herbarium_barcode', 'fieldset_herbarium');
+       setup_lookup_field($form, $form_state, 'field_herbarium_date', 'fieldset_herbarium');
+       setup_lookup_field($form, $form_state, 'field_herbarium_collector_name', 'fieldset_herbarium');
+       setup_lookup_field($form, $form_state, 'field_herbarium_collector_number', 'fieldset_herbarium');
+       setup_lookup_field($form, $form_state, 'field_herbarium_taxon', 'fieldset_herbarium');
+
+       // open or close the fieldset depending on if there is content
+       
+       if(empty($form["fieldset_herbarium"]['field_herbarium_barcode']['und']['0']['value']['#default_value'])){
+           $form['fieldset_herbarium']['#collapsed'] = true;
+           $form['fieldset_herbarium']['#title'] = $form['fieldset_herbarium']['#title'] . " - NOT found";
+       }else{
+           $form['fieldset_herbarium']['#collapsed'] = false;
+           $form['fieldset_herbarium']['#title'] = $form['fieldset_herbarium']['#title'] . " - Found";
+       }
+    
+        //  Living fields section
+        $form['fieldset_living'] = array(
+            '#type' => 'fieldset', 
+            '#title' => t('Associated Living Collections Data'), 
+            '#weight' => 50, 
+            '#collapsible' => TRUE, 
+        );
+        
+       // move a field into the fieldset
+       setup_lookup_field($form, $form_state, 'field_living_accession_number', 'fieldset_living');
+       setup_lookup_field($form, $form_state, 'field_living_date', 'fieldset_living');
+       setup_lookup_field($form, $form_state, 'field_living_collector_name', 'fieldset_living');
+       setup_lookup_field($form, $form_state, 'field_living_collector_number', 'fieldset_living');
+       setup_lookup_field($form, $form_state, 'field_living_taxon', 'fieldset_living');
+       
+       // open or close the fieldset depending on if there is content
+       if(empty($form["fieldset_living"]['field_living_accession_number']['und']['0']['value']['#default_value'])){
+           $form['fieldset_living']['#collapsed'] = true;
+           $form['fieldset_living']['#title'] = $form['fieldset_living']['#title'] . " - NOT found";
+       }else{
+           $form['fieldset_living']['#collapsed'] = false;
+           $form['fieldset_living']['#title'] = $form['fieldset_living']['#title'] . " - Found";
+       }
+       
+       
+        //  coll_books fields section
+        $form['fieldset_coll_books'] = array(
+            '#type' => 'fieldset', 
+            '#title' => t('Associated Collector Books Data'), 
+            '#weight' => 50, 
+            '#collapsible' => TRUE, 
+        );
+
+        
+       // move a field into the fieldset
+       setup_lookup_field($form, $form_state, 'field_coll_books_coll_id', 'fieldset_coll_books');
+       setup_lookup_field($form, $form_state, 'field_coll_books_coll_num', 'fieldset_coll_books');
+       setup_lookup_field($form, $form_state, 'field_coll_books_date', 'fieldset_coll_books');
+       setup_lookup_field($form, $form_state, 'field_coll_books_collector_name', 'fieldset_coll_books');
+       setup_lookup_field($form, $form_state, 'field_coll_books_taxon', 'fieldset_coll_books');
+       
+       // open or close the fieldset depending on if there is content
+       if(empty($form["fieldset_coll_books"]['field_coll_books_coll_id']['und']['0']['value']['#default_value'])){
+           $form['fieldset_coll_books']['#collapsed'] = true;
+           $form['fieldset_coll_books']['#title'] = $form['fieldset_coll_books']['#title'] . " - NOT found";
+       }else{
+           $form['fieldset_coll_books']['#collapsed'] = false;
+           $form['fieldset_coll_books']['#title'] = $form['fieldset_coll_books']['#title'] . " - Found";
+       }       
+
+       //$form['#attached']['js'][] = drupal_get_path('module', 'foo') . '/js/foo.form.js';
+
+}
+
+function setup_lookup_field(&$form, $form_state, $fieldName, $fieldSetName, $disable = true){
+    
+    // disable the field
+    if($disable) $form[$fieldName]['und']['0']['value']['#disabled'] = TRUE;
+    
+    // move it to the fieldset
+    $form[$fieldSetName][$fieldName] = $form[$fieldName];
+    unset($form[$fieldName]);
+       
+    // if we have it set in the $form_state then add it as the value
+    // or remove them if they are not in the values 
+    if(!empty($form_state['values'])){
+        if(!empty($form_state['values'][$fieldName]) && !empty($form_state['values'][$fieldName]['und'][0]['value'])){
+            $form[$fieldSetName][$fieldName]['und']['0']['value']['#default_value'] = $form_state['values'][$fieldName]['und'][0]['value'];   
+        }else{
+            $form[$fieldSetName][$fieldName]['und']['0']['value']['#default_value'] = null;
+        }
+    }
+    
+}
+
+function silicagel_collection_form_lookup_values($form, &$form_state){
+     
+    $lookupKey = $form_state['values']['field_data_lookup_key']['und'][0]['value'];
+   
+    $assData = lookup_associated_data($lookupKey);
+   
+   $dataFound = false;
+   
+   if(isset($assData['HERBARIUM'])){
+       $dataFound = true;
+       $form_state['values']['field_herbarium_barcode']['und'][0]['value'] =$assData['HERBARIUM']['barcode'];
+       $form_state['values']['field_herbarium_collector_name']['und'][0]['value'] = $assData['HERBARIUM']['collector_name'];
+       $form_state['values']['field_herbarium_collector_number']['und'][0]['value'] = $assData['HERBARIUM']['collector_number'];
+       $form_state['values']['field_herbarium_taxon']['und'][0]['value'] = strip_tags($assData['HERBARIUM']['taxon']);
+       $form_state['values']['field_herbarium_date']['und'][0]['value'] = $assData['HERBARIUM']['collection_date'];
+   }else{
+       unset($form_state['values']['field_herbarium_barcode']);
+       unset($form_state['values']['field_herbarium_collector_name']);
+       unset($form_state['values']['field_herbarium_collector_number']);
+       unset($form_state['values']['field_herbarium_taxon']);
+       unset($form_state['values']['field_herbarium_date']);
+   }
+   
+   if(isset($assData['ACCESSION'])){
+       $dataFound = true;
+       $form_state['values']['field_living_accession_number']['und'][0]['value'] = $assData['ACCESSION']['accession_number'];
+       $form_state['values']['field_living_collector_name']['und'][0]['value'] = $assData['ACCESSION']['collector_name'];
+       $form_state['values']['field_living_collector_number']['und'][0]['value'] = $assData['ACCESSION']['collector_number'];
+       $form_state['values']['field_living_taxon']['und'][0]['value'] = $assData['ACCESSION']['taxon'];
+       $form_state['values']['field_living_date']['und'][0]['value'] = $assData['ACCESSION']['collection_date'];
+   }
+   
+   if(isset($assData['PLANT'])){
+       $dataFound = true;
+       $form_state['values']['field_living_accession_number']['und'][0]['value'] = $assData['PLANT']['accession_number'];
+       $form_state['values']['field_living_collector_name']['und'][0]['value'] = $assData['PLANT']['collector_name'];
+       $form_state['values']['field_living_collector_number']['und'][0]['value'] = $assData['PLANT']['collector_number'];
+       $form_state['values']['field_living_taxon']['und'][0]['value'] = $assData['PLANT']['taxon'];
+       $form_state['values']['field_living_date']['und'][0]['value'] = $assData['PLANT']['collection_date'];
+   }
+   
+   // no plant or accession then wipe that part of the form
+   if(!isset($assData['PLANT']) && !isset($assData['ACCESSION'])){
+      unset($form_state['values']['field_living_accession_number']);
+      unset($form_state['values']['field_living_collector_name']);
+      unset($form_state['values']['field_living_collector_number']);
+      unset($form_state['values']['field_living_taxon']);
+      unset($form_state['values']['field_living_date']);
+   }
+   
+   if(isset($assData['COLL_BOOK'])){
+       $dataFound = true;
+       $form_state['values']['field_coll_books_coll_id']['und'][0]['value'] =$assData['COLL_BOOK']['coll_id'];
+       $form_state['values']['field_coll_books_collector_name']['und'][0]['value'] = $assData['COLL_BOOK']['collector_name'];
+       $form_state['values']['field_coll_books_coll_num']['und'][0]['value'] = $assData['COLL_BOOK']['collector_number'];
+       $form_state['values']['field_coll_books_taxon']['und'][0]['value'] = strip_tags($assData['COLL_BOOK']['taxon']);
+       $form_state['values']['field_coll_books_date']['und'][0]['value'] = $assData['COLL_BOOK']['collection_date'];
+   }else{
+       unset($form_state['values']['field_coll_books_coll_id']);
+       unset($form_state['values']['field_coll_books_collector_name']);
+       unset($form_state['values']['field_coll_books_coll_num']);
+       unset($form_state['values']['field_coll_books_taxon']);
+       unset($form_state['values']['field_coll_books_date']);
+   }
+   
+   
+   // go to rebuild the form
+   $form_state['rebuild'] = TRUE;
+    
+    
+}
+
+
+
+function silicagel_collection_form_lookup_values_validate(&$form, $form_state){
+    
+   // var_dump($form_state); exit;
+    
+    
+    // just check that we have a recognised type of lookup val
+    $lookupKey = $form_state['values']['field_data_lookup_key']['und'][0]['value'];
+    
+    error_log('lookup validate called: ' . $lookupKey );
+    
+    if(!get_lookup_key_type($lookupKey)){
+        form_set_error('field_data_lookup_key', t("This doesn't look like a valid lookup key."));
+    }
+    
+}
+
+
+/*
+    Validate the node form - Do we have associated data present?
+*/
+function silicagel_collection_node_validate($node, $form, &$form_state) {
+    
+    $herbBarcode = $form_state['values']['field_herbarium_barcode']['und'][0]['value'];
+    $accessionNumber = $form_state['values']['field_living_accession_number']['und'][0]['value'];
+    $collId = $form_state['values']['field_coll_books_coll_id']['und'][0]['value'];
+    
+    if(empty($herbBarcode) && empty($accessionNumber) && empty($collId)){
+        form_set_error('field_data_lookup_key', t('No associated data has been found. You must link this record with a specimen.'));
+    }
+    
+    // ------- past this point they have been successful (apart from rare double barcode) and the next phase will be the default submit call -------------
+
+    // if they have a dummy barcode generate a real one.
+    // small chance of race condition if two people do this at the same time
+    if('ESILICA--------' == $form_state['values']['field_barcode']['und']['0']['value']){
+         $form_state['values']['field_barcode']['und']['0']['value'] = get_next_barcode();
+    }
+    
+    // set a title field for the node
+    $title = $form_state['values']['field_barcode']['und']['0']['value'] . ' - ' . $form_state['values']['field_data_lookup_key']['und']['0']['value'];
+    
+    if(!empty($form_state['values']['field_herbarium_taxon']['und'][0]['value'])){
+        $title .= ' - ' . $form_state['values']['field_herbarium_taxon']['und'][0]['value'];
+    }elseif (!empty($form_state['values']['field_living_taxon']['und'][0]['value'])){
+        $title .= ' - ' . $form_state['values']['field_living_taxon']['und'][0]['value'];
+    }elseif (!empty($form_state['values']['field_coll_books_taxon']['und'][0]['value'])){
+        $title .= ' - ' . $form_state['values']['field_coll_books_taxon']['und'][0]['value'];
+    }
+    
+    $form_state['values']['title'] = $title;
+    
+
+    
+}
+
+function get_next_barcode(){
+    
+    $nextNumber = variable_get('silicagel_next_barcode_number', 1);
+    
+    $nextBarcode = 'EGEN' . str_pad($nextNumber, 7, '0', STR_PAD_LEFT);
+   
+    // check it doesn't exist
+    $result = db_query("SELECT * FROM field_data_field_barcode WHERE field_barcode_value = '$nextBarcode' ");
+    if( $result->rowCount() > 0){
+        drupal_set_message(print_r($result->fetchAssoc(), true));
+        form_set_error('field_barcode', t('Duplicate barcode creation attempt! Something bad is happening. Please try again.'));
+    }
+    
+    variable_set('silicagel_next_barcode_number', $nextNumber + 1);
+    
+    return $nextBarcode;
+    
+}
+
+/*
+ *  Returns an array of associated data
+ * or empty array if none is found
+ */
+function lookup_associated_data($lookupKey){
+    
+    $keyType = get_lookup_key_type($lookupKey);
+    $associatedData = array();
+    
+    // fail if we can't get a key type
+    if(!$keyType) return $associatedData;
+    
+    // call a method associated with the key type
+    switch ($keyType) {
+        case 'HERBARIUM':
+             lookup_associated_data_herbarium($lookupKey, $keyType, $associatedData);
+            break;
+            
+        case 'ACCESSION':
+            lookup_associated_data_living($lookupKey, $keyType, $associatedData);
+            break;
+        
+        case 'PLANT':
+            lookup_associated_data_living($lookupKey, $keyType, $associatedData);
+            break;
+            
+        case 'COLL_BOOK':
+            lookup_associated_data_coll_book($lookupKey, $keyType, $associatedData);
+            break;
+
+        default:
+            # code...
+            break;
+    }
+    
+    return $associatedData;
+    
+}
+
+function lookup_associated_data_living($lookupKey, $keyType, &$associatedData){
+
+     // switch to the correct database
+     db_set_active('bgbase_dump');
+    
+    if($keyType == 'PLANT'){
+        $sql = "SELECT concat(ACC_NUM, ACC_NUM_QUAL) AS identifier, dwc.* FROM bgbase_dump.darwin_core_living AS dwc JOIN bgbase_dump.plants AS p ON p.ACC_NUM = dwc.CatalogNumber WHERE concat(ACC_NUM, ACC_NUM_QUAL) = '$lookupKey'";
+    }else{
+        $sql = "SELECT dwc.CatalogNumber AS identifier, dwc.* FROM bgbase_dump.darwin_core_living AS dwc WHERE dwc.CatalogNumber = '$lookupKey'";
+    }
+    
+    $result = db_query($sql);
+    
+    if($result->rowCount()){
+        
+        $associatedData[$keyType] = array();
+        foreach($result as $row){
+            $associatedData[$keyType]['accession_number'] = $lookupKey;
+            $associatedData[$keyType]['collector_name'] = $row->Collector;
+            $associatedData[$keyType]['collector_number'] = $row->CollectorNumber;
+            $associatedData[$keyType]['taxon'] = strip_tags($row->ScientificName);
+            $associatedData[$keyType]['collection_date'] = $row->EarliestDateCollected;
+        }
+        
+    }
+    
+    // have we got an associated coll books entry?
+    if(!isset($associatedData['COLL_BOOK'])){
+        $accNum = substr($lookupKey, 0, 8);
+        $sql = "SELECT  ACC_NUM, COLL_ID, COLL_NUM FROM accessions  WHERE COLL_ID IS NOT NULL AND COLL_NUM IS NOT NULL AND ACC_NUM = '$accNum'";
+        $result = db_query($sql);
+        if($result->rowCount()){
+        
+            // we have coll_id and coll_num so let's populate that (if we don't have it already)
+            $row = $result->fetchAssoc();
+            lookup_associated_data_coll_book($row['COLL_ID'] . ":" . $row['COLL_NUM'], 'COLL_BOOK', $associatedData);
+        }
+    }
+    
+    // switch back db
+    db_set_active();
+    
+}
+
+function lookup_associated_data_coll_book($lookupKey, $keyType, &$associatedData){
+    
+    
+    // switch to the correct database
+      db_set_active('bgbase_dump');
+
+     // get the row
+     $sql = "SELECT cb.coll_id, cb.coll_num, cb.coll_name, cb.name_free, cb.family, cb.genus, cb.country_code,
+     
+    convert(
+        case coll_dt_qual
+            when 'Y' then year(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY))
+            when 'M' then concat(monthname(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)), ' ', year(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)))
+            else DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)
+        end,
+    char) as coll_date
+     
+     from 
+     coll_books as cb 
+     where concat_ws(':', cb.COLL_ID, cb.COLL_NUM) like '$lookupKey'";
+
+     $result = db_query($sql);
+
+     if($result->rowCount()){
+
+         $associatedData[$keyType] = array();
+         foreach($result as $row){
+             $associatedData[$keyType]['coll_id'] = $row->coll_id;
+             $associatedData[$keyType]['collector_name'] = $row->coll_name;
+             $associatedData[$keyType]['collector_number'] = $row->coll_num;
+             $associatedData[$keyType]['taxon'] = strip_tags("$row->name_free");
+             $associatedData[$keyType]['collection_date'] = $row->coll_date;
+         }
+
+     }
+     
+     // switch back db
+     db_set_active();
+     
+     // do we have associated herbarium material
+     if(!isset($associatedData['HERBARIUM'])){
+         
+          db_set_active('bgbase_dump');
+         
+         list($collId, $collNum) = explode(':', $lookupKey);
+         
+         $sql = "SELECT BARCODE FROM specimens WHERE COLL_ID = '$collId' AND COLL_NUM = '$collNum'";
+         $result = db_query($sql);
+         if($result->rowCount() > 0){
+             $row = $result->fetchAssoc();
+             lookup_associated_data_herbarium($row['BARCODE'], 'HERBARIUM', $associatedData);
+         }
+         
+         // warn them if there were more than one found
+         if($result->rowCount() > 1){
+             $count = $result->rowCount();
+             drupal_set_message(t("$count herbarium records were found for '$lookupKey'. The first was used." ), 'warning');
+         }
+         
+         db_set_active();
+         
+     }
+     
+     
+     
+     // do we have associated living material
+     if(!isset($associatedData['ACCESSION']) && !isset($associatedData['PLANT'])){
+         
+         db_set_active('bgbase_dump');
+         
+         list($collId, $collNum) = explode(':', $lookupKey);
+         
+         $sql = "SELECT ACC_NUM FROM accessions WHERE COLL_ID = '$collId' AND COLL_NUM = '$collNum'";
+         $result = db_query($sql);
+         if($result->rowCount() > 0){
+             $row = $result->fetchAssoc();
+             lookup_associated_data_living($row['ACC_NUM'], 'ACCESSION', $associatedData);
+         }
+         
+         // warn them if there were more than one found
+         if($result->rowCount() > 1){
+             $count = $result->rowCount();
+             drupal_set_message(t("$count accesssion records were found for '$lookupKey'. The first was used." ), 'warning');
+         }
+         
+         
+         db_set_active();
+     }     
+
+}
+
+
+
+function lookup_associated_data_herbarium($lookupKey, $keyType, &$associatedData){
+    
+     // switch to the correct database
+     db_set_active('bgbase_dump');
+
+    // get the row
+    $sql = "SELECT barcode, s.coll_name, s.coll_num, n.current_name,
+    
+    convert(
+        case coll_dt_qual
+            when 'Y' then year(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY))
+            when 'M' then concat(monthname(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)), ' ', year(DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)))
+            else DATE_ADD('1967-12-31', INTERVAL coll_dt DAY)
+        end,
+    char) as coll_date
+    
+    from 
+    specimens as s 
+    join current_names as n
+    on n.specimen_num = s.SPECIMEN_NUM
+    where barcode like '$lookupKey'";
+
+    $result = db_query($sql);
+    
+    if($result->rowCount()){
+        
+        $associatedData[$keyType] = array();
+        foreach($result as $row){
+            $associatedData[$keyType]['barcode'] = $row->barcode;
+            $associatedData[$keyType]['collector_name'] = $row->coll_name;
+            $associatedData[$keyType]['collector_number'] = $row->coll_num;
+            $associatedData[$keyType]['taxon'] = strip_tags($row->current_name);
+            $associatedData[$keyType]['collection_date'] = $row->coll_date;       
+        }
+        
+    }
+    
+    // have we got an associated coll books entry?
+    $accNum = substr($lookupKey, 0, 8);
+    $sql = "SELECT  BARCODE, COLL_ID, COLL_NUM FROM specimens  WHERE COLL_ID IS NOT NULL AND COLL_NUM IS NOT NULL AND BARCODE = '$lookupKey'";
+    $result = db_query($sql);
+    if($result->rowCount()){
+        
+        // we have coll_id and coll_num so let's populate that (if we don't have it already)
+        $row = $result->fetchAssoc();
+        if(!isset($associatedData['COLL_BOOK'])){
+            lookup_associated_data_coll_book($row['COLL_ID'] . ":" . $row['COLL_NUM'], 'COLL_BOOK', $associatedData);
+        }
+        
+    }
+
+    // switch back db
+    db_set_active();
+    
+    
+}
+
+function get_lookup_key_type($key){
+    
+        if(preg_match('/^E[0-9]{8}$/', $key)) return 'HERBARIUM';
+        if(preg_match('/^[0-9]{8}$/', $key) ) return 'ACCESSION';
+        if(preg_match('/^[0-9]{8}[A-Za-z]+/', $key) ) return 'PLANT';
+        if(preg_match('/^[0-9A-Z]{2,}:.+/', $key) ) return 'COLL_BOOK';
+        return false;
+}
+
+/**
+*   A form to request a label is printed
+*
+*/
+
+function silicagel_collection_label_form($form, &$form_state, $label_values = array()) {
+
+  $form["wrapper_start"] = array("#markup" => "<div id='silicagel_print_reponse'>");
+
+  // taxon name
+  $short_taxon_name = empty($label_values['taxon']) ? '' : $label_values['taxon'];
+  
+  if(strlen($short_taxon_name) > 30){
+      $short_taxon_name = substr($short_taxon_name, 0, 30);
+  }
+  
+  $form['label_taxon'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Taxon Name:'),
+      '#required' => TRUE,
+      '#maxlength' => 40,
+      '#default_value' => $short_taxon_name,
+  );
+    
+  /*
+  $form['label_coll_name'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Collector Name:'),
+      '#required' => TRUE,
+      '#maxlength' => 40,
+      '#default_value' => empty($label_values['collector_name']) ? '' : $label_values['collector_name'],
+  );
+  
+  $form['label_coll_number'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Collector Number:'),
+      '#required' => TRUE,
+      '#maxlength' => 40,
+      '#default_value' => empty($label_values['collector_number']) ? '' : $label_values['collector_number'],
+  );
+*/
+
+  $form['label_collection_date'] = array(
+      '#type' => 'hidden',
+      '#title' => t('Collection Date:'),
+      '#required' => TRUE,
+      '#maxlength' => 40,
+      '#default_value' => empty($label_values['collection_date']) ? '' : $label_values['collection_date'],
+  );
+
+  $form['label_creation_date'] = array(
+      '#type' => 'hidden',
+      '#required' => TRUE,
+      '#default_value' => empty($label_values['creation_date']) ? '' : $label_values['creation_date'],
+  );
+
+  $form['label_nid'] = array(
+      '#type' => 'hidden',
+      '#required' => TRUE,
+      '#default_value' => empty($label_values['nid']) ? '' : $label_values['nid'],
+  );
+
+  $form['label_data_lookup_key'] = array(
+        '#type' => 'hidden',
+        '#required' => TRUE,
+        '#default_value' => empty($label_values['data_lookup_key']) ? '' : $label_values['data_lookup_key'],
+  );
+
+  $form['label_barcode'] = array(
+      '#type' => 'hidden',
+      '#required' => TRUE,
+      '#default_value' => empty($label_values['barcode']) ? '' : $label_values['barcode'],
+  );
+
+  $form['storage_location'] = array(
+      '#type' => 'hidden',
+      '#required' => TRUE,
+      '#default_value' => empty($label_values['storage_location']) ? '' : $label_values['storage_location'],
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Print Label'),
+    '#ajax' => array(
+        'callback' => 'silicagel_collection_label_form_ajax_submit',
+        //'callback' => 'silicagel-collection-label-form',
+        'wrapper' => 'silicagel_print_reponse',
+        'method' => 'replace',
+        'effect' => 'fade',
+     ),
+  );
+  
+
+  $form["wrapper_stop"] = array(
+      "#markup" => "</div>",
+      "#weight" => 100,
+   );
+  
+  return $form;
+
+}
+
+function silicagel_collection_label_form_ajax_submit($form, $form_state){
+    
+    // do nothing if we have errors
+    if (form_get_errors()) return $form;
+    
+    $fieldVals = array();
+    $fieldVals['{barcode}'] = $form_state['values']['label_barcode'];
+    //$fieldVals['{barcode}'] = substr($fieldVals['{barcode}'],0,9); // only nine digits
+    
+    $fieldVals['{taxon}'] = $form_state['values']['label_taxon'];
+    $fieldVals['{data_lookup_key}'] = $form_state['values']['label_data_lookup_key'];
+    $fieldVals['{collection_date}'] = $form_state['values']['label_collection_date'];
+    $fieldVals['{creation_date}'] = $form_state['values']['label_creation_date'];
+    $fieldVals['{storage_location}'] = $form_state['values']['storage_location'];
+
+    /*
+    $fieldVals['{collector_name}'] = $form_state['values']['label_coll_name'];
+    $fieldVals['{collector_number}'] = $form_state['values']['label_coll_number'];
+    */
+    
+    $printerCommands = populate_template(variable_get('silicagel_zpl_label_template'), $fieldVals);
+
+    // check if we are debugging or sendin it to the printer for real
+    if(variable_get('silicagel_zpl_label_template_debug', '0')){
+        
+        drupal_set_message("Code for printing: " . $form_state['values']['label_barcode'] . " displayed below;");
+         
+         $form['printer-commands'] = array(
+            "#markup" => "<pre id=\"printer-commands\">" . $printerCommands . "</pre>",
+            "#weight" => 100,
+        );
+        
+        return $form;
+    }else{
+        
+        // ok - let's send it to the printer
+        /* Turn on implicit output flushing so we see what we're getting
+            * as it comes in. */
+       ob_implicit_flush();
+       $ip = variable_get('silicagel_printer_ip_address');
+       $port = variable_get('silicagel_printer_port_number');
+    
+    
+       /* Create a TCP/IP socket. */
+       $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+       if ($socket === false) {
+           echo "socket_create() failed: reason: " . socket_strerror(socket_last_error()) . "\n";
+       }
+       
+       $result = socket_connect($socket, $ip, $port);
+       if ($result === false) {
+           echo "socket_connect() failed.\nReason: ($result) " . socket_strerror(socket_last_error($socket)) . "\n";
+       }
+    
+       socket_write($socket, $printerCommands, strlen($printerCommands));    
+       //echo socket_read($socket, 2048);
+       socket_close($socket);
+       
+        drupal_set_message("Print job sent for: " . $form_state['values']['label_barcode']);
+        return $form;
+        
+    }
+    
+}
+
+function populate_template($template, $fieldVals){
+    
+    $result = $template;
+    
+    foreach($fieldVals as $key => $val){
+        $result = str_replace($key, $val, $result);
+    }
+    
+    return $result;
+    
+}
+
+
+

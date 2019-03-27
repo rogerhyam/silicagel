@@ -1,0 +1,38 @@
+^XA
+
+^FX --- Splash ---
+^FT22,40, 0
+^A0N,21,32^FDRoyal Botanic Garden Edinburgh^FS
+
+^FX --- BARCODE ---
+^FO22,64
+^BY2^B3N,N,80,N,N,A^FD{barcode}^FS
+
+^FX --- BARCODE - Number ---
+^FT100,178, 0
+^A0N,36,48^FD{barcode}^FS
+
+^FX --- Taxon Name ---
+^FT22,208, 0
+^A0N,21,32^FD{taxon}^FS
+
+^FX --- Foreign Key to other system ---
+^FT22,240
+^A0N,25,34^FDFrom:^FS
+^FT105,240
+^A0N,25,34^FD{data_lookup_key}^FS
+
+^FX --- storage location ---
+^FT22,275
+^A0N,25,34^FD{storage_location}^FS
+^FT309,257
+
+^XZ
+
+^FX --- What does this bit do? ---
+^XA
+^XFR:SSFMT000.ZPL^FS
+^FN1^FD^FS
+^FN2^FD^FS
+^PQ1,0,1,Y
+^XZ

@@ -1,0 +1,4 @@
+name = Silica Gel Collection
+description = Managing Silica Gel Packet entries.
+package = RBGE
+core = 7.x
