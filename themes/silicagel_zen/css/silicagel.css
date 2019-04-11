@@ -1,0 +1,154 @@
+#page{
+    margin-top: 10px;
+    background-color: white;
+    border: solid gray 1px;
+}
+
+#header{
+    background-color: gray;
+    background-position: top left;
+    padding-left: 10px;
+    height: 110px;
+}
+
+#name-and-slogan{
+    margin-top: 20px;
+    color: white;
+    -moz-text-shadow:    2px 2px 2px #000;
+    -webkit-text-shadow: 2px 2px 2px #000;
+    text-shadow:         2px 2px 2px #000;
+}
+
+#site-slogan{
+    margin-top: 5px;
+}
+
+
+#site-name a{
+    color: white;
+    font-size: 122%;
+}
+
+#secondary-menu a{
+    color: white;
+}
+
+#main-menu{
+    padding-right: 5px;
+    padding-left: 5px;
+    margin-left: -10px;
+    margin-right: -10px;
+    /*
+    background-color: #FFF0D1;
+    border-bottom: solid 1px lightgray;
+    */
+    
+}
+
+#main-menu ul.links li{
+    display: inline-block;
+    margin: 0px;
+    
+    padding-left: 0px;
+    padding-right: 5px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    width: auto;
+}
+
+#main-menu li a{
+    
+    display: block;
+    
+    padding-top: 3px;
+    padding-bottom: 3px;
+    padding-left: 6px;
+    padding-right: 6px;
+    
+    margin-top: 5px;
+    margin-bottom: 12px;
+    margin-right: 0px;
+    margin-left: 0px;
+    
+    -moz-box-shadow:    2px 2px 2px #000;
+    -webkit-box-shadow: 2px 2px 2px #000;
+    box-shadow:         2px 2px 2px #000;
+    
+    border: solid gray 1px;
+    
+    background-color: gray;
+    color: white;
+    text-decoration: none;
+}
+
+#main-menu li a:hover{
+    background-color: lightgray;
+}
+
+#main-menu li a:active{
+    
+    margin-top: 7px;
+    margin-bottom: -2px;
+    margin-left: 2px;
+    margin-right: -2px;
+    
+    -moz-box-shadow:    none;
+    -webkit-box-shadow: none;
+    box-shadow:         none;
+
+}
+
+#content{
+    margin-top: 20px;
+}
+
+/* ------ MINOR COMPONENTS --------- */
+
+#search-block-form{
+ float: right;
+ margin-top: -35px;
+ padding-left: 500px;
+ text-align: right;
+}
+
+#print-control-wrapper,
+#fields-wrapper{
+    max-width: 800px;
+    margin-top: 1em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+    border: solid 1px gray;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#print-control-wrapper{
+    max-width: 780px;
+    padding-top: 0px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+
+/* top field in each lookup section */
+.field-name-field-coll-books-coll-num,
+.field-name-field-living-accession-number,
+.field-name-field-herbarium-barcode{
+    margin-top: 1em;
+    padding-top: 1em;
+    border-top: solid 1px gray;
+}
+
+.field-label{
+    width: 33%;
+    text-align: right;
+    padding-right: 0.5em;
+}
+
+#printer-commands{
+    background-color: black;
+    color: white;
+    padding: 5px;
+}
+
+
